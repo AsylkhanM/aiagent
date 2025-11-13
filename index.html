@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>StudyMate — Web UI для AI Agent</title>
+<style>
+  :root{
+    --bg:#0f1720; --card:#0b1220; --muted:#94a3b8; --accent:#5eead4; --accent2:#60a5fa;
+    --bubble-user:#154e4a; --bubble-bot:#0b2a43;
+    --radius:14px; --mono: "Segoe UI", Roboto, Arial, sans-serif;
+  }
+  html,body{height:100%;margin:0;font-family:var(--mono);background:linear-gradient(180deg,#071025 0%, #071826 100%);color:#e6eef6}
+  .wrap{max-width:900px;margin:28px auto;padding:20px;display:grid;grid-template-columns:350px 1fr;gap:20px}
+  .panel{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:16px;padding:18px;box-shadow:0 6px 30px rgba(2,6,23,0.6);border:1px solid rgba(255,255,255,0.03)}
+  .left{display:flex;flex-direction:column;gap:14px;align-items:center}
+  .avatar{width:120px;height:120px;border-radius:999px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-weight:700;color:#042;box-shadow:0 6px 24px rgba(10,20,40,0.6)}
+  .name{font-size:20px;font-weight:700;margin-top:6px}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:10px}
+  .desc{font-size:13px;color:var(--muted);line-height:1.4;text-align:center}
+  .settings{width:100%;margin-top:6px;display:flex;gap:8px;flex-direction:column}
+  .input-small{padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.03);background:transparent;color:inherit}
+  .btn{padding:10px;border-radius:10px;border:none;background:linear-gradient(90deg,var(--accent2),var(--accent));color:#021029;font-weight:700;cursor:pointer}
+  .main{display:flex;flex-direction:column;height:620px}
+  .chat{flex:1;overflow:auto;padding:18px;display:flex;flex-direction:column;gap:10px;background:linear-gradient(180deg, rgba(255,255,255,0.01), transparent);border-radius:12px;border:1px solid rgba(255,255,255,0.02)}
+  .bubble{max-width:78%;padding:12px 14px;border-radius:12px;color:#e6eef6;line-height:1.35;box-shadow:0 6px 18px rgba(2,6,23,0.6)}
+  .user{align-self:flex-end;background:linear-gradient(180deg,var(--bubble-user),#0d3f3d);border-bottom-right-radius:6px}
+  .bot{align-self:flex-start;background:linear-gradient(180deg,var(--bubble-bot),#05283f);border-bottom-left-radius:6px}
+  .meta{font-size:12px;color:var(--muted);margin-top:6px}
+  .input-area{display:flex;gap:10px;padding-top:12px;align-items:center}
+  .text{flex:1;padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,0.03);background:transparent;color:inherit;resize:none}
+  .small{font-size:12px;color:var(--muted)}
+  .typing{font-size:13px;color:var(--muted);display:inline-block;padding:6px 10px;border-radius:10px;background:rgba(255,255,255,0.02)}
+  /* small responsivity */
+  @media(max-width:880px){.wrap{grid-template-columns:1fr;padding:12px}.left{flex-direction:row;align-items:center;gap:12px}.avatar{width:80px;height:80px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="panel left">
+    <div style="display:flex;flex-direction:column;align-items:center">
+      <div id="avatar" class="avatar">AI</div>
+      <div class="name" id="agentName">StudyMate</div>
+      <div class="sub" id="agentRole">Учебный помощник</div>
+    </div>
+
+    <div class="desc">
+      Это web-интерфейс для твоего AI Agent. Вставь webhook n8n ниже и нажми "Сохранить". После — просто пиши в чат.
+    </div>
+
+    <div class="settings">
+      <label class="small">Webhook n8n</label>
+      <input id="webhook" class="input-small" placeholder="https://.../webhook/..." value="https://asylkhan.app.n8n.cloud/webhook/40e5de9d-4b75-48ff-8bb7-dd94007dd6e7/webhook">
+      <label class="small">Имя агента</label>
+      <input id="agent" class="input-small" value="StudyMate AI">
+      <label class="small">Аватар (буква)</label>
+      <input id="avatarLetter" class="input-small" maxlength="2" value="SM">
+      <div style="display:flex;gap:8px">
+        <button id="saveBtn" class="btn">Сохранить</button>
+        <button id="clearBtn" class="btn" style="background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--muted)">Очистить</button>
+      </div>
+      <div class="small" style="margin-top:8px;color:var(--muted)">Примечание: если n8n блокирует CORS, залей этот файл на GitHub Pages / Vercel / Netlify.</div>
+    </div>
+  </div>
+
+  <div class="panel main">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div style="font-weight:700">Чат</div>
+      <div id="status" class="small">Ожидание</div>
+    </div>
+
+    <div id="chat" class="chat" aria-live="polite"></div>
+
+    <div class="input-area">
+      <textarea id="message" class="text" rows="2" placeholder="Напиши сообщение..."></textarea>
+      <button id="send" class="btn">Отправить</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  // === НАСТРОЙКИ (вставь свой webhook если нужно) ===
+  const DEFAULT_WEBHOOK = document.getElementById('webhook').value.trim();
+  // ================================================
+
+  const chatEl = document.getElementById('chat');
+  const msgInput = document.getElementById('message');
+  const sendBtn = document.getElementById('send');
+  const statusEl = document.getElementById('status');
+  const webhookInput = document.getElementById('webhook');
+  const agentInput = document.getElementById('agent');
+  const avatarInput = document.getElementById('avatarLetter');
+  const saveBtn = document.getElementById('saveBtn');
+  const clearBtn = document.getElementById('clearBtn');
+  const avatarEl = document.getElementById('avatar');
+  const agentNameEl = document.getElementById('agentName');
+
+  // load settings from localStorage
+  function loadSettings(){
+    const w = localStorage.getItem('sm_webhook') || DEFAULT_WEBHOOK;
+    const name = localStorage.getItem('sm_name') || agentInput.value;
+    const av = localStorage.getItem('sm_avatar') || avatarInput.value;
+    webhookInput.value = w;
+    agentInput.value = name;
+    avatarInput.value = av;
+    agentNameEl.textContent = name;
+    avatarEl.textContent = av;
+  }
+  function saveSettings(){
+    localStorage.setItem('sm_webhook', webhookInput.value.trim());
+    localStorage.setItem('sm_name', agentInput.value.trim());
+    localStorage.setItem('sm_avatar', avatarInput.value.trim());
+    agentNameEl.textContent = agentInput.value.trim();
+    avatarEl.textContent = avatarInput.value.trim();
+    showNotice('Настройки сохранены');
+  }
+  function showNotice(t){
+    statusEl.textContent = t;
+    setTimeout(()=> statusEl.textContent = 'Ожидание', 2500);
+  }
+
+  loadSettings();
+
+  // helper to append chat bubble
+  function appendBubble(text, who='bot'){
+    const d = document.createElement('div');
+    d.className = 'bubble ' + (who === 'user' ? 'user' : 'bot');
+    d.innerHTML = sanitize(text);
+    chatEl.appendChild(d);
+    chatEl.scrollTop = chatEl.scrollHeight;
+  }
+  function sanitize(s){
+    // very simple
+    return String(s).replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+  }
+
+  // detect common reply fields from n8n / API responses
+  function extractReply(obj){
+    if(!obj) return null;
+    // if string
+    if(typeof obj === 'string' && obj.trim()) return obj;
+    // if array with objects possibly
+    if(Array.isArray(obj)){
+      // try to find message-like fields
+      for(const it of obj){
+        if(typeof it === 'string' && it.trim()) return it;
+        if(it?.message) {
+          if(typeof it.message === 'string') return it.message;
+          if(it.message?.content) return it.message.content;
+          if(it.message?.output_text) return it.message.output_text;
+        }
+        // top-level fields
+        if(it?.response) {
+          if(typeof it.response === 'string') return it.response;
+          if(it.response?.text) return it.response.text;
+        }
+        if(it?.text) return it.text;
+      }
+    }
+    // if object: check common names
+    const keys = ['reply','message','output_text','response','result','data','text','answer','output','content'];
+    for(const k of keys){
+      const v = obj[k];
+      if(!v) continue;
+      if(typeof v === 'string' && v.trim()) return v;
+      if(Array.isArray(v) && v.length){
+        // join short strings
+        const joined = v.map(x => (typeof x === 'string' ? x : (x?.text || x?.message || ''))).filter(Boolean).join(' ');
+        if(joined) return joined;
+      }
+      if(typeof v === 'object'){
+        // deeper
+        if(v?.text) return v.text;
+        if(v?.message) return v.message;
+        if(v?.output_text) return v.output_text;
+        if(v?.generations) {
+          // models sometimes: generations -> [ [ { text } ] ]
+          try{
+            if(Array.isArray(v.generations) && v.generations.length){
+              const g = v.generations[0];
+              if(Array.isArray(g) && g.length && g[0]?.text) return g[0].text;
+            }
+          }catch(e){}
+        }
+      }
+    }
+    // check top-level content fields
+    for(const k of Object.keys(obj)){
+      const val = obj[k];
+      if(typeof val === 'string' && val.length < 2000 && val.trim().length>0) {
+        // choose a likely text (not deep metadata)
+        if(!k.match(/id|token|date|status|ok|code|usage/i)) return val;
+      }
+    }
+    return null;
+  }
+
+  // function to call webhook
+  async function callWebhook(text){
+    const url = webhookInput.value.trim();
+    if(!url){
+      showNotice('Webhook не указан');
+      return null;
+    }
+    statusEl.textContent = 'Отправка...';
+    try{
+      const payload = { text: text, source: 'web', timestamp: Date.now() };
+      const res = await fetch(url, {
+        method: 'POST',
+        mode: 'cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if(!res.ok){
+        // try to parse body for error info
+        let txt = await res.text().catch(()=> '');
+        showNotice('Ошибка сервера: ' + res.status);
+        console.error('Webhook error', res.status, txt);
+        return { error: `HTTP ${res.status}: ${txt}` };
+      }
+      // try json
+      const j = await res.json().catch(()=> null);
+      statusEl.textContent = 'Ответ получен';
+      return j;
+    }catch(err){
+      console.error('Network error', err);
+      statusEl.textContent = 'Ошибка сети';
+      return { error: err.message || String(err) };
+    }
+  }
+
+  // handle send
+  async function handleSend(){
+    const txt = msgInput.value.trim();
+    if(!txt) return;
+    appendBubble(txt, 'user');
+    msgInput.value = '';
+    // typing indicator
+    const typing = document.createElement('div');
+    typing.className = 'typing';
+    typing.textContent = 'Печатает...';
+    chatEl.appendChild(typing);
+    chatEl.scrollTop = chatEl.scrollHeight;
+
+    const resp = await callWebhook(txt);
+    typing.remove();
+    if(!resp){
+      appendBubble('Ошибка: пустой ответ от сервера', 'bot');
+      return;
+    }
+    if(resp.error){
+      appendBubble('Ошибка: ' + String(resp.error), 'bot');
+      return;
+    }
+    // try to extract reply
+    const reply = extractReply(resp) || extractReply(resp[0]) || extractReply(resp.result) || null;
+    if(reply){
+      appendBubble(reply, 'bot');
+    } else {
+      // fallback: pretty print JSON if nothing else
+      try{
+        appendBubble(JSON.stringify(resp, null, 2), 'bot');
+      }catch(e){
+        appendBubble('Ответ получен, но не удалось распарсить.', 'bot');
+      }
+    }
+  }
+
+  // events
+  sendBtn.addEventListener('click', handleSend);
+  msgInput.addEventListener('keydown', (e) => { if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); handleSend(); } });
+  saveBtn.addEventListener('click', saveSettings);
+  clearBtn.addEventListener('click', ()=>{
+    chatEl.innerHTML = '';
+    msgInput.value = '';
+    showNotice('Чат очищен');
+  });
+
+  // load sample welcome from localStorage flag
+  if(!localStorage.getItem('sm_seen_welcome')){
+    appendBubble('Привет! Я StudyMate — ваш учебный помощник. Напиши вопрос или задание, и я попробую помочь.', 'bot');
+    localStorage.setItem('sm_seen_welcome','1');
+  }
+
+})();
+</script>
+</body>
+</html>
